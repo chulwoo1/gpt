@@ -1,17 +1,19 @@
 #!/bin/bash
 # Configure
+exec > make.log 2>&1 
 root="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." >/dev/null 2>&1 && pwd )"
-GRID=${root}/dependencies/Grid/build
+GRID=/ccs/home/lehner/gpt/dependencies/Grid/build
+#GRID=/gpfs/alpine/phy138/proj-shared/phy138flavor/chulwoo/Grid/gpt/build
 if [ ! -d ${GRID} ];
 then
     GRID=${root}/../Grid/build
 fi
 if [ ! -d ${GRID} ];
 then
-    echo "Could not detect Grid location"
+    echo "Could not detect Grid location "${GRID}
     exit 2
 fi
-NPARALLEL=42
+NPARALLEL=4
 
 # Start
 N=0
