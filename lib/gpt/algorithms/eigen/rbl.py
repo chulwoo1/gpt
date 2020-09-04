@@ -258,10 +258,9 @@ class rbl:
                 g.mem_report(details=False)
 # compute
             t0 = g.time()
-            if not ckpt.load(w[k-L]):
-                mat(w[k-L], evec[k])
-#                            mat(v, B)
-                ckpt.save(w[k-L])
+#            if not ckpt.load(w[k-L]):
+            mat(w[k-L], evec[k])
+#                ckpt.save(w[k-L])
             t1 = g.time()
     
                 # allow to restrict maximal number of applications within run
