@@ -80,7 +80,8 @@ class rbl:
         w = [g.lattice(src) for i in range(Nu)]
         w_copy = [g.lattice(src) for i in range(Nu)]
 
-        mat_split = evec[0].split(mpi_split)
+        print ("mat class is",type(mat))
+        mat_split = mat.split(mpi_split)
         op_split = self.mat(mat_split)
         nparallel = mat_split.grid[0].sranks
         g.message("nparallel=%d\n"%(nparallel))
@@ -203,9 +204,9 @@ class rbl:
                         g.linear_combination(B, evec[0:Nr], Qt[j, 0:Nr])
                         g.message("norm=%e"%(g.norm2(B)))
                         B *= 1.0 / g.norm2(B) ** 0.5
-                        if not ckpt.load(v):
-                            mat(v, B)
-                            ckpt.save(v)
+#                        if not ckpt.load(v):
+                        mat(v, B)
+#                            ckpt.save(v)
                         ev_test = g.innerProduct(B, v).real
                         eps2 = g.norm2(v - ev_test * B) / lambda_max ** 2.0
                         if verbose:
