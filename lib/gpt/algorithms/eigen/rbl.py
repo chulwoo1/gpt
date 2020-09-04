@@ -51,12 +51,14 @@ class rbl:
         Nm = self.params["Nm"]
         Nu = self.params["Nu"]
         Nk = self.params["Nk"]
+        mpi_split = self.params["mpi_split"]
+        print ( "mpi_split=",mpi_split )
         Nstop = self.params["Nstop"]
         Np = Nm-Nk
         MaxIter=self.params["maxiter"]
         Np /= MaxIter
         assert Nm >= Nk and Nstop <= Nk
-        print ( 'Nm=',Nm,'Nu=',Nu,'Nk=',Nk )
+        g.message ( 'Nm=%d Nu= %d Nk=%d\n'%(Nm,Nu,Nk) )
 
         # tensors
         dtype = np.float64
@@ -77,6 +79,15 @@ class rbl:
         evec = [g.lattice(src) for i in range(Nm)]
         w = [g.lattice(src) for i in range(Nu)]
         w_copy = [g.lattice(src) for i in range(Nu)]
+
+        mat_split = evec[0].split(mpi_split)
+        op_split = self.mat(mat_split)
+        nparallel = mat_split.grid[0].sranks
+        g.message("nparallel=%d\n"%(nparallel))
+        if nparallel!=Nu:
+            raise Exception(
+                f"nparallel!=Nu"
+            )
 
         # advice memory storage
         if not self.params["advise"] is None:
@@ -253,23 +264,27 @@ class rbl:
         R= (b+1)*Nu
 
 
-        for k in range (L,R):
-            if self.params["mem_report"]:
-                g.mem_report(details=False)
+#        for k in range (L,R):
+        if self.params["mem_report"]:
+            g.mem_report(details=False)
 # compute
-            t0 = g.time()
+        t0 = g.time()
 #            if not ckpt.load(w[k-L]):
-            mat(w[k-L], evec[k])
+        src_split = g.split(evec[L:R], split_grid=matrix_split.grid[1])
+        dst_split = g.split(w[0:Nu], split_grid=matrix_split.grid[0])
+#            mat(w[k-L], evec[k])
+        op_split(dst_split,src_split)
+        g.unsplit (w[0:Nu],dst_split)
 #                ckpt.save(w[k-L])
-            t1 = g.time()
+        t1 = g.time()
     
                 # allow to restrict maximal number of applications within run
-            self.napply += 1
-            if "maxapply" in self.params:
-                if self.napply == self.params["maxapply"]:
-                    if verbose:
-                        g.message("Maximal number of matrix applications reached")
-                    sys.exit(0)
+        self.napply += Nu
+        if "maxapply" in self.params:
+            if self.napply == self.params["maxapply"]:
+                if verbose:
+                    g.message("Maximal number of matrix applications reached")
+                sys.exit(0)
         for u in range (Nu):
             for k in range (u,Nu):
                 ip=g.innerProduct(evec[L+k],evec[L+u])
