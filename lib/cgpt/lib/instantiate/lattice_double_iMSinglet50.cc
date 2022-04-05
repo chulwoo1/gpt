@@ -23,8 +23,8 @@ typedef void* (* create_lattice_prec_otype)(GridBase* grid);
 extern std::map<std::string,create_lattice_prec_otype> _create_otype_;
 extern std::map<std::string,int> _otype_singlet_rank_;
 
-void lattice_init_double_iMColor2() {
+void lattice_init_double_iMSinglet50() {
   std::string prec = "double";
-  _create_otype_[prec + ":" + get_otype(iMColor2<vComplexD>())] = [](GridBase* grid) { return (void*)new cgpt_Lattice< iMColor2< vComplexD > >(grid); };
-  _otype_singlet_rank_[get_otype(iMColor2<vComplexD>())] = singlet_rank(iMColor2<vComplexD>());
+  _create_otype_[prec + ":" + get_otype(iMSinglet50<vComplexD>())] = [](GridBase* grid) { return (void*)new cgpt_Lattice< iMSinglet50< vComplexD > >(grid); };
+  _otype_singlet_rank_[get_otype(iMSinglet50<vComplexD>())] = singlet_rank(iMSinglet50<vComplexD>());
 }

@@ -19,25 +19,12 @@
 */
 #include "../lib.h"
 
-#include "../expression/mul.h"
+typedef void* (* create_lattice_prec_otype)(GridBase* grid);
+extern std::map<std::string,create_lattice_prec_otype> _create_otype_;
+extern std::map<std::string,int> _otype_singlet_rank_;
 
-template<>
-cgpt_Lattice_base* cgpt_lattice_gammamul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iVColor2<vComplexF> >& la, Gamma::Algebra gamma, int unary_expr, bool rev, ComplexD coef) {
-  ERR("Not implemented");
-}
-
-template<>
-cgpt_Lattice_base* cgpt_lattice_matmul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iVColor2<vComplexF> >& la, PyArrayObject* b, std::string& bot, int unary_b, int unary_expr, bool rev, ComplexD coef) {
-  typedef vComplexF vtype;
-  _MM_INNER_OUTER_PRODUCT_(iVColor2);
-  ERR("Not implemented");
-}
-
-template<>
-cgpt_Lattice_base* cgpt_lattice_mul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iVColor2<vComplexF> >& la,int unary_b, cgpt_Lattice_base* b, int unary_expr, ComplexD coef) {
-  typedef vComplexF vtype;
-  _COMPATIBLE_(iSinglet);
-  _OUTER_PRODUCT_(iVColor2);
-  _INNER_PRODUCT_(iVColor2);
-  ERR("Not implemented");
+void lattice_init_double_iVSinglet50() {
+  std::string prec = "double";
+  _create_otype_[prec + ":" + get_otype(iVSinglet50<vComplexD>())] = [](GridBase* grid) { return (void*)new cgpt_Lattice< iVSinglet50< vComplexD > >(grid); };
+  _otype_singlet_rank_[get_otype(iVSinglet50<vComplexD>())] = singlet_rank(iVSinglet50<vComplexD>());
 }

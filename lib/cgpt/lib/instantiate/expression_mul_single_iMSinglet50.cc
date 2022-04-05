@@ -22,22 +22,25 @@
 #include "../expression/mul.h"
 
 template<>
-cgpt_Lattice_base* cgpt_lattice_gammamul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iVColor1<vComplexD> >& la, Gamma::Algebra gamma, int unary_expr, bool rev, ComplexD coef) {
+cgpt_Lattice_base* cgpt_lattice_gammamul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iMSinglet50<vComplexF> >& la, Gamma::Algebra gamma, int unary_expr, bool rev, ComplexD coef) {
   ERR("Not implemented");
 }
 
 template<>
-cgpt_Lattice_base* cgpt_lattice_matmul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iVColor1<vComplexD> >& la, PyArrayObject* b, std::string& bot, int unary_b, int unary_expr, bool rev, ComplexD coef) {
-  typedef vComplexD vtype;
-  _MM_INNER_OUTER_PRODUCT_(iVColor1);
+cgpt_Lattice_base* cgpt_lattice_matmul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iMSinglet50<vComplexF> >& la, PyArrayObject* b, std::string& bot, int unary_b, int unary_expr, bool rev, ComplexD coef) {
+  typedef vComplexF vtype;
+  if (unary_b == 0) {
+    _MM_COMPATIBLE_RL_(iMSinglet50);
+    _MM_COMPATIBLE_L_(iVSinglet50);
+  }
   ERR("Not implemented");
 }
 
 template<>
-cgpt_Lattice_base* cgpt_lattice_mul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iVColor1<vComplexD> >& la,int unary_b, cgpt_Lattice_base* b, int unary_expr, ComplexD coef) {
-  typedef vComplexD vtype;
-  _COMPATIBLE_(iSinglet);
-  _OUTER_PRODUCT_(iVColor1);
-  _INNER_PRODUCT_(iVColor1);
+cgpt_Lattice_base* cgpt_lattice_mul(cgpt_Lattice_base* dst, bool ac, int unary_a, Lattice< iMSinglet50<vComplexF> >& la,int unary_b, cgpt_Lattice_base* b, int unary_expr, ComplexD coef) {
+  typedef vComplexF vtype;
+  _COMPATIBLE_MSR_(iSinglet);
+  _COMPATIBLE_(iVSinglet50);
+  _COMPATIBLE_(iMSinglet50);
   ERR("Not implemented");
 }

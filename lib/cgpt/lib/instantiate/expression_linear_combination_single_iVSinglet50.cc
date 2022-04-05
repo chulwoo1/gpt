@@ -27,6 +27,6 @@
 #define INSTANTIATE(T,vtype)						\
   template cgpt_Lattice_base* cgpt_compatible_linear_combination(Lattice<T<vtype>>& _compatible,cgpt_Lattice_base* dst,bool ac, std::vector<cgpt_lattice_term>& f, int unary_factor, int unary_expr);
 
-PER_TENSOR_TYPE(iMColor1)
+PER_TENSOR_TYPE(iVSinglet50)
 
 #undef PER_TENSOR_TYPE
