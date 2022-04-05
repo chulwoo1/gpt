@@ -118,9 +118,7 @@ def unsplit(first, second, cache=None, group_policy=split_group_policy.separate)
     # Save memory by performing each group separately
     if N != 1 and group_policy == split_group_policy.separate:
         for i in range(N):
-            unsplit(
-                [first[q * N + i] for q in range(Q)], [second[i]], cache, group_policy
-            )
+            unsplit([first[q * N + i] for q in range(Q)], [second[i]], cache, group_policy)
         return
 
     split_grid = second[0].grid
@@ -163,9 +161,7 @@ def split_by_rank(first, group_policy=split_group_policy.separate):
     split_grid = grid.split(mpi_split, fdimensions)
     gcoor = gpt.coordinates(lattices[0])
     lcoor = gpt.coordinates((split_grid, lattices[0].checkerboard()))
-    return split_lattices(
-        lattices, lcoor, gcoor, split_grid, len(lattices), group_policy
-    )
+    return split_lattices(lattices, lcoor, gcoor, split_grid, len(lattices), group_policy)
 
 
 def split(first, split_grid, cache=None, group_policy=split_group_policy.separate):
@@ -183,3 +179,67 @@ def split(first, split_grid, cache=None, group_policy=split_group_policy.separat
         cache,
         group_policy,
     )
+
+
+class split_map:
+    def __init__(self, grid, functions, mpi_split):
+        self.cache = {}
+        self.grid = grid
+        self.grid_split = grid.split(mpi_split, grid.fdimensions)
+        self.functions = functions
+
+    def __call__(self, outputs, inputs=None):
+
+        call_one_argument = inputs is None
+        if inputs is None:
+            inputs = [[]] * len(outputs)
+
+        # for now this only works if all fields live on same grid!
+        assert all([o.grid is self.grid for ls in outputs + inputs for o in ls])
+        srank = self.grid_split.srank
+        sranks = self.grid_split.sranks
+        n_jobs = len(outputs)
+
+        cache = self.cache
+        grid_split = self.grid_split
+        functions = self.functions
+
+        assert len(inputs) == n_jobs
+
+        assert n_jobs % sranks == 0
+        n_jobs_per_rank = n_jobs // sranks
+        n_inputs_per_job = len(inputs[0])
+        n_outputs_per_job = len(outputs[0])
+
+        flat_inputs = [f for function_inputs in inputs for f in function_inputs]
+        flat_outputs = [f for function_outputs in outputs for f in function_outputs]
+
+        if len(flat_inputs) > 0:
+            inputs_split = split(flat_inputs, grid_split, cache)
+        else:
+            inputs_split = []
+        outputs_split = split(flat_outputs, grid_split, cache)
+
+        results = numpy.zeros(shape=(n_jobs,), dtype=numpy.complex128)
+
+        for i in range(n_jobs_per_rank):
+            this_job_index = srank * n_jobs_per_rank + i
+            this_job_inputs = [
+                inputs_split[i * n_inputs_per_job + j] for j in range(n_inputs_per_job)
+            ]
+            this_job_outputs = [
+                outputs_split[i * n_outputs_per_job + j] for j in range(n_outputs_per_job)
+            ]
+
+            if call_one_argument:
+                r = functions[this_job_index](this_job_outputs)
+            else:
+                r = functions[this_job_index](this_job_outputs, this_job_inputs)
+            if gpt.util.is_num(r) and grid_split.processor == 0:
+                results[this_job_index] = r
+
+        unsplit(flat_outputs, outputs_split, cache)
+
+        self.grid.globalsum(results)
+
+        return results
