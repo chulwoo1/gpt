@@ -25,7 +25,7 @@ import gpt as g
 import numpy as np
 import sys
 
-# Implicitly Restarted Lanczos
+# Restarted Block  Lanczos
 class rbl:
     @g.params_convention(
         orthogonalize_nblock=4,
@@ -47,7 +47,7 @@ class rbl:
     def __call__(self, mat, src, ckpt=None):
 
         # verbosity
-        verbose = g.default.is_verbose("irl")
+        verbose = g.default.is_verbose("rbl")
 
         # checkpointer
         if ckpt is None:
@@ -56,60 +56,103 @@ class rbl:
         self.ckpt = ckpt
 
         # first approximate largest eigenvalue
-        g.default.push_verbose("power_iteration_convergence", True)
-        pit = g.algorithms.eigen.power_iteration(eps=0.02, maxiter=10, real=True)
-        g.default.pop_verbose()
+        pit = g.algorithms.eigen.power_iteration(eps=0.05, maxiter=10, real=True)
         lambda_max = pit(mat, src)[0]
 
         # parameters
         Nm = self.params["Nm"]
+        Nu = self.params["Nu"]
         Nk = self.params["Nk"]
         Nstop = self.params["Nstop"]
-        rotate_use_accelerator = self.params["rotate_use_accelerator"]
+        Np = Nm-Nk
+        MaxIter=self.params["maxiter"]
+        Np /= MaxIter
+        print ( 'Nm=',Nm,'Nu=',Nu,'Nk=',Nk )
         assert Nm >= Nk and Nstop <= Nk
+        assert Np >= Nu
 
         # tensors
         dtype = np.float64
-        lme = np.empty((Nm,), dtype)
-        lme2 = np.empty((Nm,), dtype)
+        ctype = np.complex128
+         
+        lme = np.zeros((Nu,Nm), ctype)
+        lmd = np.zeros((Nu,Nm), ctype)
+        lme2 = np.zeros((Nu,Nm), ctype)
+        lmd2 = np.empty((Nu,Nm), ctype)
+        Qt = np.zeros((Nm,Nm),ctype)
+        Q = np.zeros((Nm,Nm),ctype)
         ev = np.empty((Nm,), dtype)
-        ev2 = np.empty((Nm,), dtype)
         ev2_copy = np.empty((Nm,), dtype)
 
         # fields
         f = g.lattice(src)
         v = g.lattice(src)
         evec = [g.lattice(src) for i in range(Nm)]
+        w = [g.lattice(src) for i in range(Nu)]
+        w_copy = [g.lattice(src) for i in range(Nu)]
+
+        # advice memory storage
+#        if not self.params["advise"] is None:
+#            g.advise(evec, self.params["advise"])
 
         # scalars
         k1 = 1
         k2 = Nk
         beta_k = 0.0
 
+        rng=g.random("test")
         # set initial vector
-        evec[0] @= src / g.norm2(src) ** 0.5
+#        rng.zn(w)
+        for i in range(Nu):
+            rng.zn(w[i])
+            if i > 0: 
+                g.orthogonalize(w[i],evec[0:i])
+            evec[i]=g.copy(w[i])
+            evec[i] *= 1.0/ g.norm2(evec[i]) ** 0.5
+            if verbose:
+                g.message("norm(evec[%d]=%e "%(i,g.norm2(evec[i])))
+            if i > 0: 
+                for j in range(i):
+                    ip=g.inner_product(evec[j],w[i])
+                    if np.abs(ip) >1e-6:
+                        g.message("inner(evec[%d],w[%d])=%e %e"% (j,i,ip.real,ip.imag))
+#           evec[i] @= src[i] / g.norm2(src[i]) ** 0.5
 
         # initial Nk steps
-        for k in range(Nk):
-            self.step(mat, ev, lme, evec, f, Nm, k)
+        Nblock_k = int(Nk/Nu)
+        for b in range(Nblock_k):
+            self.blockStep(mat, lmd, lme, evec, w, w_copy, Nm, b,Nu)
 
+        Nblock_p = int(Np/Nu)
         # restarting loop
-        for it in range(self.params["maxiter"]):
-            if verbose:
-                g.message("Restart iteration %d" % it)
-            for k in range(Nk, Nm):
-                self.step(mat, ev, lme, evec, f, Nm, k)
-            f *= lme[Nm - 1]
+#        for it in range(self.params["maxiter"]):
+        for it in range(MaxIter):
+#            if verbose:
+            g.message("Restart iteration %d" % it)
 
-            # eigenvalues
-            for k in range(Nm):
-                ev2[k] = ev[k + k1 - 1]
-                lme2[k] = lme[k + k1 - 1]
+            Nblock_l = Nblock_k + it*Nblock_p;
+            Nblock_r = Nblock_l + Nblock_p;
+            Nl = Nblock_l*Nu
+            Nr = Nblock_r*Nu
+#           ev2.resize(Nr)
+            ev2 = np.empty((Nr,), dtype)
 
+            for b in range(Nblock_l, Nblock_r):
+                self.blockStep(mat,  lmd, lme, evec, w, w_copy, Nm, b,Nu)
+
+            for u in range(Nu):
+                for k in range(Nr):
+                    lmd2[u,k]=lmd[u,k]
+                    lme2[u,k]=lme[u,k]
+
+
+            Qt = np.identity(Nr, ctype)
+            
             # diagonalize
             t0 = g.time()
-            Qt = np.identity(Nm, dtype)
-            self.diagonalize(ev2, lme2, Nm, Qt)
+#            self.diagonalize(ev2, lme2, Nm, Qt)
+            self.diagonalize(ev2,lmd2,lme2,Nu,Nr,Qt)
+#    def diagonalize(self, eval, lmd, lme, Nu, Nk, Nm, Qt):
             t1 = g.time()
 
             if verbose:
@@ -119,34 +162,17 @@ class rbl:
             ev2_copy = ev2.copy()
             ev2 = list(reversed(sorted(ev2)))
 
-            # implicitly shifted QR transformations
-            Qt = np.identity(Nm, dtype)
-            t0 = g.time()
-            for ip in range(k2, Nm):
-                g.qr_decomposition(ev, lme, Nm, Nm, Qt, ev2[ip], k1, Nm)
-            t1 = g.time()
-
-            if verbose:
-                g.message("QR took %g s" % (t1 - t0))
+            for i in range(Nr):
+#                if verbose:
+                 g.message("Rval[%d]= %e"%(i,ev2[i]))
 
             # rotate
-            t0 = g.time()
-            g.rotate(evec, Qt, k1 - 1, k2 + 1, 0, Nm, rotate_use_accelerator)
-            t1 = g.time()
+#            t0 = g.time()
+#            g.rotate(evec, Qt, k1 - 1, k2 + 1, 0, Nm)
+#            t1 = g.time()
 
-            if verbose:
-                g.message("Basis rotation took %g s" % (t1 - t0))
-
-            # compression
-            f *= Qt[k2 - 1, Nm - 1]
-            f += lme[k2 - 1] * evec[k2]
-            beta_k = g.norm2(f) ** 0.5
-            betar = 1.0 / beta_k
-            evec[k2] @= betar * f
-            lme[k2 - 1] = beta_k
-
-            if verbose:
-                g.message("beta_k = ", beta_k)
+#            if verbose:
+#                g.message("Basis rotation took %g s" % (t1 - t0))
 
             # convergence test
             if it >= self.params["Nminres"]:
@@ -154,33 +180,42 @@ class rbl:
                     g.message("Rotation to test convergence")
 
                 # diagonalize
-                for k in range(Nm):
+                for k in range(Nr):
                     ev2[k] = ev[k]
-                    lme2[k] = lme[k]
-                Qt = np.identity(Nm, dtype)
+            #        lme2[k] = lme[k]
+                for u in range(Nu):
+                    for k in range(Nr):
+                        lmd2[u,k]=lmd[u,k]
+                        lme2[u,k]=lme[u,k]
+                Qt = np.identity(Nm, ctype)
 
                 t0 = g.time()
-                self.diagonalize(ev2, lme2, Nk, Qt)
+#                self.diagonalize(ev2, lme2, Nk, Qt)
+                self.diagonalize(ev2,lmd2,lme2,Nu,Nr,Qt)
                 t1 = g.time()
 
-                if verbose:
-                    g.message("Diagonalization took %g s" % (t1 - t0))
+#                if verbose:
+                g.message("Diagonalization took %g s" % (t1 - t0))
 
                 B = g.copy(evec[0])
 
                 allconv = True
-                if beta_k >= self.params["betastp"]:
+#                if beta_k >= self.params["betastp"]:
+                if  1 : 
                     jj = 1
                     while jj <= Nstop:
                         j = Nstop - jj
-                        g.linear_combination(B, evec[0:Nk], Qt[j, 0:Nk])
+                        g.linear_combination(B, evec[0:Nr], Qt[j, 0:Nr])
+                        if verbose:
+                            g.message("norm=%e"%(g.norm2(B)))
                         B *= 1.0 / g.norm2(B) ** 0.5
                         if not ckpt.load(v):
                             mat(v, B)
                             ckpt.save(v)
                         ev_test = g.inner_product(B, v).real
                         eps2 = g.norm2(v - ev_test * B) / lambda_max ** 2.0
-                        if verbose:
+#                        if verbose:
+                        if 1 :
                             g.message(
                                 "%-65s %-45s %-50s"
                                 % (
@@ -196,12 +231,12 @@ class rbl:
                         jj = min([Nstop, 2 * jj])
 
                 if allconv:
-                    if verbose:
-                        g.message("Converged in %d iterations" % it)
-                        break
+#                    if verbose:
+                    g.message("Converged in %d iterations" % it)
+                    break
 
         t0 = g.time()
-        g.rotate(evec, Qt, 0, Nstop, 0, Nk, rotate_use_accelerator)
+        g.rotate(evec, Qt, 0, Nstop, 0, Nk)
         t1 = g.time()
 
         if verbose:
@@ -209,86 +244,135 @@ class rbl:
 
         return (evec[0:Nstop], ev2_copy[0:Nstop])
 
-    def diagonalize(self, lmd, lme, Nk, Qt):
+    def diagonalize(self, evals, lmd, lme, Nu, Nk, Qt):
         TriDiag = np.zeros((Nk, Nk), dtype=Qt.dtype)
-        for i in range(Nk):
-            TriDiag[i, i] = lmd[i]
-        for i in range(Nk - 1):
-            TriDiag[i, i + 1] = lme[i]
-            TriDiag[i + 1, i] = lme[i]
+        for u in range(Nu):
+            for k in range(Nk):
+                TriDiag[k][u+int(k/Nu)*Nu] = lmd[u][k]
+        for u in range(Nu):
+            for k in range(Nk):
+                TriDiag[k-Nu][u+int(k/Nu)*Nu] = np.conjugate(lme[u][k-Nu])
+                TriDiag[u+int(k/Nu)*Nu][k-Nu] = lme[u][k-Nu]
         w, v = np.linalg.eigh(TriDiag)
         for i in range(Nk):
-            lmd[Nk - 1 - i] = w[i]
+            evals[Nk - 1 - i] = w[i]
             for j in range(Nk):
-                Qt[Nk - 1 - i, j] = v[j, i]
+                Qt[Nk - 1 - i, j] = v[j,i]
 
-    def step(self, mat, lmd, lme, evec, w, Nm, k):
-        assert k < Nm
+    def blockStep(self, mat, lmd, lme, evec, w, w_copy, Nm, b, Nu):
+        assert (b+1)*Nu <= Nm
 
         verbose = g.default.is_verbose("irl")
         ckpt = self.ckpt
 
         alph = 0.0
         beta = 0.0
+        L= b*Nu
+        R= (b+1)*Nu
 
-        evec_k = evec[k]
 
-        results = [w, alph, beta]
-        if ckpt.load(results):
-            w, alph, beta = results  # use checkpoint
-
-            if verbose:
-                g.message(
-                    "%-65s %-45s" % ("alpha[ %d ] = %s" % (k, alph), "beta[ %d ] = %s" % (k, beta))
-                )
-
-        else:
+        for k in range (L,R):
             if self.params["mem_report"]:
                 g.mem_report(details=False)
-
-            # compute
+# compute
             t0 = g.time()
-            mat(w, evec_k)
+            if not ckpt.load(w[k-L]):
+                mat(w[k-L], evec[k])
+#                            mat(v, B)
+                ckpt.save(w[k-L])
             t1 = g.time()
-
-            # allow to restrict maximal number of applications within run
+    
+                # allow to restrict maximal number of applications within run
             self.napply += 1
             if "maxapply" in self.params:
                 if self.napply == self.params["maxapply"]:
                     if verbose:
                         g.message("Maximal number of matrix applications reached")
                     sys.exit(0)
+        for u in range (Nu):
+            for k in range (u,Nu):
+                ip=g.inner_product(evec[L+k],evec[L+u])
+                if np.abs(ip) >1e-6:
+                    g.message("inner(evec[%d],evec[%d])=%e %e"% (L+k,L+u,ip.real,ip.imag))
+    
+        if b > 0:
+            for u in range (Nu):
+                for k in range (L-Nu+u,L):
+                    w[u] -= np.conjugate(lme[u,k]) * evec[k]
+                for k in range (L-Nu+u,L):
+                    ip=g.inner_product(evec[k],w[u])
+#                    if g.norm2(ip)>1e-6:
+                    if np.abs(ip) >1e-6:
+                        g.message("inner(evec[%d],w[%d])=%e %e"% (k,u,ip.real,ip.imag))
+        else:
+            for u in range (Nu):
+                g.message("norm(evec[%d])=%e"%(u,g.norm2(evec[u])))
 
-            if k > 0:
-                w -= lme[k - 1] * evec[k - 1]
+        for u in range (Nu):
+            for k in range (L+u,R):
+                lmd[u][k] = g.inner_product(evec[k],w[u])
+                lmd[k-L][L+u]=np.conjugate(lmd[u][k])
+            lmd[u][L+u]=np.real(lmd[u][L+u])
 
-            zalph = g.inner_product(evec_k, w)
-            alph = zalph.real
+        for u in range (Nu):
+            for k in range (L,R):
+                w[u] -= lmd[u][k]*evec[k]
+            for k in range (L,R):
+                ip=g.inner_product(evec[k],w[u])
+                if np.abs(ip) >1e-6:
+                    g.message("inner(evec[%d],w[%d])=%e %e"% (k,u,ip.real,ip.imag))
+            w_copy[u] = g.copy(w[u]);
 
-            w -= alph * evec_k
+        for u in range (Nu):
+            for k in range (L,R):
+                lme[u][k]=0.;
+       
+        for u in range (Nu):
+            g.orthogonalize(w[u],evec[0:R])
+            w[u] *= 1.0 / g.norm2(w[u]) ** 0.5
+            for k in range (R):
+                ip=g.inner_product(evec[k],w[u])
+                if np.abs(ip) >1e-6:
+                    g.message("inner(evec[%d],w[%d])=%e %e"% (k,u,ip.real,ip.imag))
+       
+        for u in range (Nu):
+            g.orthogonalize(w[u],evec[0:R])
+            w[u] *= 1.0 / g.norm2(w[u]) ** 0.5
+            for k in range (R):
+                ip=g.inner_product(evec[k],w[u])
+                if np.abs(ip) >1e-6:
+                    g.message("inner(evec[%d],w[%d])=%e %e"% (k,u,ip.real,ip.imag))
 
-            beta = g.norm2(w) ** 0.5
-            w /= beta
+        for u in range (0,Nu):
+            if u >0: 
+                g.orthogonalize(w[u],w[0:u])
+            w[u] *= 1.0 / g.norm2(w[u]) ** 0.5
+            for k in range (u):
+                ip=g.inner_product(w[k],w[u])
+                if np.abs(ip) >1e-6:
+                    g.message("inner(w[%d],w[%d])=%e %e"% (k,u,ip.real,ip.imag))
+            ip=g.inner_product(w[u],w[u])
+            g.message("inner(w[%d],w[%d])=%e %e"% (u,u,ip.real,ip.imag))
 
-            t2 = g.time()
-            if k > 0:
-                g.orthogonalize(w, evec[0:k], nblock=self.params["orthogonalize_nblock"])
-            t3 = g.time()
+        for u in range (Nu):
+            for v in range (u,Nu):
+                lme[u][L+v] = g.inner_product(w[u],w_copy[v])
+            lme[u][L+u] = np.real(lme[u][L+u])
+        t3 = g.time()
 
-            ckpt.save([w, alph, beta])
-
-            if verbose:
-                g.message(
-                    "%-65s %-45s %-50s"
-                    % (
-                        "alpha[ %d ] = %s" % (k, zalph),
-                        "beta[ %d ] = %s" % (k, beta),
-                        " timing: %g s (matrix), %g s (ortho)" % (t1 - t0, t3 - t2),
-                    )
+        for u in range (Nu):
+            for k in range (L+u,R):
+                g.message( 
+                    " In block %d, beta[%d][%d]=%e %e"
+                    %( b, u, k-b*Nu,lme[u][k].real,lme[u][k].imag )
                 )
+    
+#                ckpt.save([w, alph, beta])
+    
 
-        lmd[k] = alph
-        lme[k] = beta
-
-        if k < Nm - 1:
-            evec[k + 1] @= w
+        if b < (Nm/Nu - 1):
+            for u in range (Nu):
+                evec[R+u] = g.copy(w[u])
+                ip=g.inner_product(evec[R+u],evec[R+u])
+                if np.abs(ip) >1e-6:
+                    g.message("inner(evec[%d],evec[%d])=%e %e"% (R+u,R+u,ip.real,ip.imag))
