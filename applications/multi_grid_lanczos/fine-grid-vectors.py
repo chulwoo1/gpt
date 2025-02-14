@@ -12,7 +12,7 @@ fn = g.default.get("--params", "params.txt")
 
 # load configuration
 # U = params["config"]
-grid=g.grid([48, 48, 48, 96], g.double)
+grid=g.grid([32, 32, 32, 32], g.double)
 rng = g.random( "benchmark", "vectorized_ranlux24_24_64" )  
 U = g.qcd.gauge.random(grid,rng,scale=0.5 )
 conf = g.default.get("--config", "None")
@@ -35,10 +35,11 @@ exact = g.qcd.fermion.mobius(U,{
 fmatrix = exact.converted(g.single)
 
 #op = params["op"](fmatrix)
-Mpc = g.qcd.fermion.preconditioner.eo1_ne(parity=g.odd)(fmatrix).Mpc
+Mpc = g.qcd.fermion.preconditioner.eo2_ne(parity=g.odd)(fmatrix).Mpc
 
 op = g.algorithms.polynomial.chebyshev({
-    "low"   : 9.644e-7,
+#    "low"   : 9.644e-7,
+    "low"   : 0.01,
     "high"  : 5.5,
     "order" : 20,
 })(Mpc)
