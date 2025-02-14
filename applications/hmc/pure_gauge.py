@@ -15,7 +15,7 @@ n = g.default.get_int("--n", 100)
 nwrite = g.default.get_int("--nwrite", 10)
 g.default.set_verbose("omf4")
 
-grid = g.grid([8, 8, 8, 16], g.double)
+grid = g.grid([32, 32, 32, 48], g.double)
 rng = g.random(seed)
 
 U = g.qcd.gauge.unit(grid)

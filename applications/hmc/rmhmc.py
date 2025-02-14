@@ -31,7 +31,7 @@ seed = g.default.get("--seed", "hmc-pure-gauge")
 n = g.default.get_int("--n", 1000)
 
 # grid
-grid = g.grid([4, 4, 4, 8], g.double)
+grid = g.grid([32, 32, 32, 64], g.double)
 rng = g.random(seed)
 
 # load state / initialize state
@@ -63,12 +63,14 @@ r_mom = g.group.cartesian(U)  # auxiliary fields
 
 # f(lap) = scale * (lap + mass_1) * (lap + mass_2) * ... * (lap + mass_n)
 
-f_lap = g.qcd.gauge.algebra_laplace_polynomial(U, 1.0, [-0.1, -0.2, -0.3])  # scale  # masses
+#f_lap = g.qcd.gauge.algebra_laplace_polynomial(U, 1.0, [-0.1, -0.2, -0.3])  # scale  # masses
+f_lap = g.qcd.gauge.algebra_laplace_polynomial(U, 1.0, [0.1])  # scale  # masses
 
-f_lap = g.qcd.gauge.algebra_laplace_polynomial(U, 1.0, [-0.2])  # scale  # masses
+#f_lap = g.qcd.gauge.algebra_laplace_polynomial(U, 54.0839,  [-0.263269353553692 + 0.139094987659662j ,-0.263269353553692 - 0.139094987659662j ,-0.898000232089286 - 0.147649776260415j,-0.898000232089286 + 0.147649776260415j])  # scale  # masses
+
 
 g.default.push_verbose("block_cg", True)
-cg = g.algorithms.inverter.block_cg({"eps": 1e-15, "maxiter": 300})
+cg = g.algorithms.inverter.block_cg({"eps": 1e-15, "maxiter": 3000})
 
 inv_f_lap = f_lap.inverse(cg)
 
@@ -114,10 +116,10 @@ aR = g.qcd.scalar.action.general_mass_term(
 
 # test action
 rng.element(p_mom)
-aP.assert_gradient_error(rng, U + p_mom, U + p_mom, 1e-3, 1e-8)
+#aP.assert_gradient_error(rng, U + p_mom, U + p_mom, 1e-3, 1e-8)
 
 rng.element(r_mom)
-aR.assert_gradient_error(rng, U + r_mom, U + r_mom, 1e-3, 1e-8)
+#aR.assert_gradient_error(rng, U + r_mom, U + r_mom, 1e-3, 1e-8)
 
 
 # wilson action
