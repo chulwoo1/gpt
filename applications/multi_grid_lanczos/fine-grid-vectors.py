@@ -24,21 +24,21 @@ g.save("config_sav", U, g.format.nersc())
 # matrix to use
 #fmatrix = params["fmatrix"](U)
 exact = g.qcd.fermion.mobius(U,{
-    "mass": 0.00049,
-    "M5": 1.4,
-    "b": 2.0,
-    "c": 1.0,
-    "Ls": 12,
+    "mass": 0.00078,
+    "M5": 1.8,
+    "b": 1.5,
+    "c": 0.5,
+    "Ls": 24,
     "boundary_phases": [1.0, 1.0, 1.0, -1.0],
 })
 
 fmatrix = exact.converted(g.single)
 
 #op = params["op"](fmatrix)
-Mpc = g.qcd.fermion.preconditioner.eo1_ne(parity=g.odd)(fmatrix).Mpc
+Mpc = g.qcd.fermion.preconditioner.eo2_ne(parity=g.odd)(fmatrix).Mpc
 
 op = g.algorithms.polynomial.chebyshev({
-    "low"   : 9.644e-7,
+    "low"   : 0.1,
     "high"  : 5.5,
     "order" : 20,
 })(Mpc)
