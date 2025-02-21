@@ -22,17 +22,5 @@
 #include "stencil/matrix_vector.h"
 #include "stencil/tensor.h"
 
-<<<<<<<< HEAD:lib/cgpt/lib/stencil.h
 // remove common definitions
 #undef fetch
-========
-#define PER_TENSOR_TYPE(T)						\
-  INSTANTIATE(T,vComplexD)
-
-#define INSTANTIATE(T,vtype)						\
-  template cgpt_Lattice_base* cgpt_compatible_linear_combination(Lattice<T<vtype>>& _compatible,cgpt_Lattice_base* dst,bool ac, std::vector<cgpt_lattice_term>& f, int unary_factor, int unary_expr);
-
-PER_TENSOR_TYPE(iMSinglet50)
-
-#undef PER_TENSOR_TYPE
->>>>>>>> f0eb8748b03ea17d07c513c6dd27c508d60033ff:lib/cgpt/lib/instantiate/expression_linear_combination_double_iMSinglet50.cc

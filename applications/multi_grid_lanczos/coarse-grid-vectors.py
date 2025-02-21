@@ -11,27 +11,60 @@ import gpt as g
 g.mem_report()
 
 # parameters
-fn = g.default.get("--params", "params.txt")
-params = g.params(fn, verbose=True)
+#fn = g.default.get("--params", "params.txt")
+#params = g.params(fn, verbose=True)
 
 # load configuration
-U = params["config"]
+#U = params["config"]
+grid=g.grid([16, 16, 16, 32], g.double)
+conf = g.default.get("--config", "None")
+U = g.load(conf)
+g.save("config_sav", U, g.format.nersc())
 
 # show available memory
 g.mem_report()
 
 # fermion
-q = params["fmatrix"](U)
+#q = params["fmatrix"](U)
+qz = g.qcd.fermion.zmobius( U,
+    {
+        "mass": 0.01,
+        "M5": 1.8,
+        "b": 1.0,
+        "c": 0.0,
+        "omega": [
+            1.45806438985048 + 1j *(0),
+            1.18231318389348 + 1j *(0),
+            0.830951166685955 + 1j *(0),
+            0.542352409156791 + 1j *(0),
+            0.341985020453729 + 1j *(0),
+            0.21137902619029 + 1j *(0),
+            0.126074299502912 + 1j *(0),
+            0.0990136651962626 + 1j *(0),
+            0.0686324988446592 + 1j *(0.0550658530827402),
+            0.0686324988446592 + 1j *(0.0550658530827402),
+        ],
+        "boundary_phases": [1.0, 1.0, 1.0, -1.0],
+    },
+)
+
+fmatrix = qz.converted(g.single)
+Mpc = g.qcd.fermion.preconditioner.eo2_ne(parity=g.odd)(fmatrix).Mpc
+
 
 # load basis vectors
-nbasis = params["nbasis"]
-fg_basis, fg_cevec, fg_feval = g.load(
-    params["basis"],
-    grids=q.Mpc.grid[0],
-    nmax=nbasis,
-    advise_basis=g.infrequent_use,
-    advise_cevec=g.infrequent_use,
-)
+#nbasis = params["nbasis"]
+nbasis=20
+if 1:
+    fg_basis, fg_cevec, fg_feval = g.load(
+        nbasis,
+        grids=grid,
+        nmax=nbasis,
+        advise_basis=g.infrequent_use,
+        advise_cevec=g.infrequent_use,
+    )
+else:
+    fg_basis, fg_feval = g.load(f"{dst}/basis")
 
 # memory info
 g.mem_report()
@@ -59,7 +92,7 @@ for i in range(nbasis):
         # basis[i].advise( g.infrequent_use )
 
     basis[i] @= b.promote * fg_cevec[i]
-    _, ev_eps2 = g.algorithms.eigen.evals(q.Mpc, [basis[i]], real=True)
+    _, ev_eps2 = g.algorithms.eigen.evals(Mpc, [basis[i]], real=True)
     assert ev_eps2[0] < 1e-4
     g.message("Compare to: %g" % fg_feval[i])
 
@@ -72,14 +105,25 @@ g.message("Memory information after discarding original basis:")
 g.mem_report()
 
 # coarse grid
-cgrid = params["cgrid"](basis[0].grid)
+#cgrid = params["cgrid"](basis[0].grid)
+cgrid = g.block.grid(grid,[12,4,4,4,4])
+
 b = g.block.map(cgrid, basis)
 
 # cheby on coarse grid
 cop = params["cmatrix"](q.Mpc, b)
 
 # implicitly restarted lanczos on coarse grid
-irl = params["method_evec"]
+#irl = params["method_evec"]
+irl = g.algorithms.eigen.irl({
+    "Nk" : 100,
+    "Nstop" : 120,
+    "Nm" : 200,
+    "resid" : 1e-8,
+    "betastp" : 1e-8,
+    "maxiter" : 40,
+    "Nminres" : 0,
+})
 
 # start vector
 cstart = g.vcomplex(cgrid, nbasis)

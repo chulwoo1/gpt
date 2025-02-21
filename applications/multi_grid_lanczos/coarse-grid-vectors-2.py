@@ -11,20 +11,52 @@ import gpt as g
 g.mem_report()
 
 # parameters
-fn = g.default.get("--params", "params.txt")
-params = g.params(fn, verbose=True)
+#fn = g.default.get("--params", "params.txt")
+#params = g.params(fn, verbose=True)
 
 # load configuration
-U = params["config"]
+#U = params["config"]
+
+dst="."
+grid=g.grid([16, 16, 16, 32], g.double)
+conf = g.default.get("--config", "None")
+U = g.load(conf)
+g.save("config_sav", U, g.format.nersc())
 
 # show available memory
 g.mem_report()
 
 # fermion
-q = params["fmatrix"](U)
+#q = params["fmatrix"](U)
+
+qz = g.qcd.fermion.zmobius( U,
+    {
+        "mass": 0.01,
+        "M5": 1.8,
+        "b": 1.0,
+        "c": 0.0,
+        "omega": [
+            1.45806438985048 + 1j *(0),
+            1.18231318389348 + 1j *(0),
+            0.830951166685955 + 1j *(0),
+            0.542352409156791 + 1j *(0),
+            0.341985020453729 + 1j *(0),
+            0.21137902619029 + 1j *(0),
+            0.126074299502912 + 1j *(0),
+            0.0990136651962626 + 1j *(0),
+            0.0686324988446592 + 1j *(0.0550658530827402),
+            0.0686324988446592 + 1j *(0.0550658530827402),
+        ],
+        "boundary_phases": [1.0, 1.0, 1.0, -1.0],
+    },
+)
+
+fmatrix = qz.converted(g.single)
+Mpc = g.qcd.fermion.preconditioner.eo2_ne(parity=g.odd)(fmatrix).Mpc
 
 # load basis vectors
-basis, feval = g.load(params["basis"])
+#basis, feval = g.load(params["basis"])
+basis, feval = g.load(f"{dst}/basis")
 nbasis = len(basis)
 
 # memory info
@@ -39,19 +71,35 @@ g.mem_report()
 # prepare and test basis
 for i in range(nbasis):
     g.message(i)
-    _, eps2 = g.algorithms.eigen.evals(q.Mpc, [basis[i]], real=True)
+    _, eps2 = g.algorithms.eigen.evals(Mpc, [basis[i]], real=True)
     assert all([e2 < 1e-4 for e2 in eps2])
     g.mem_report(details=False)
 
 # coarse grid
-cgrid = params["cgrid"](q.Mpc.grid[0])
+#cgrid = params["cgrid"](q.Mpc.grid[0])
+grid=Mpc.vector_space[0].grid
+cgrid = g.block.grid(grid,[10,2,2,2,2])
 b = g.block.map(cgrid, basis)
 
 # cheby on coarse grid
-cop = params["cmatrix"](q.Mpc, b)
+#cop = params["cmatrix"](q.Mpc, b)
+cop = b.coarse_operator(g.algorithms.polynomial.chebyshev({
+    "low"   : 0.03,
+    "high"  : 5.5,
+    "order" : 10,
+})(Mpc))
 
 # implicitly restarted lanczos on coarse grid
-irl = params["method_evec"]
+#irl = params["method_evec"]
+irl = g.algorithms.eigen.irl({
+    "Nk" : 110,
+    "Nstop" : 100,
+    "Nm" : 150,
+    "resid" : 1e-10,
+    "betastp" : 1e-7,
+    "maxiter" : 40,
+    "Nminres" : 0,
+})
 
 # start vector
 cstart = g.vcomplex(cgrid, nbasis)
@@ -60,7 +108,8 @@ cstart[:] = g.vcomplex([1] * nbasis, nbasis)
 g.mem_report()
 
 # basis
-northo = params["northo"]
+#northo = params["northo"]
+northo = 3
 for i in range(northo):
     g.message("Orthonormalization round %d" % i)
     b.orthonormalize()
@@ -78,12 +127,21 @@ g.mem_report()
 try:
     cevec, cev = g.load("cevec")
 except g.LoadError:
-    cevec, cev = irl(cop, cstart, params["checkpointer"])
+#    cevec, cev = irl(cop, cstart, params["checkpointer"])
+    ckpt2=g.checkpointer(f"{dst}/ckpt")
+    cevec, cev = irl(cop, cstart,ckpt2)
     g.save("cevec", (cevec, cev))
 
 # smoother
-smoother = params["smoother"](q.Mpc)
-nsmoother = params["nsmoother"]
+#smoother = params["smoother"](q.Mpc)
+smoother = g.algorithms.inverter.cg({
+    "eps": 1e-8,
+    "maxiter": 15
+})(Mpc)
+
+#nsmoother = params["nsmoother"]
+nsmoother = 1
+
 v_fine = g.lattice(basis[0])
 v_fine_smooth = g.lattice(basis[0])
 try:
@@ -95,7 +153,7 @@ except g.LoadError:
         for j in range(nsmoother):
             v_fine_smooth @= smoother * v_fine
             v_fine @= v_fine_smooth / g.norm2(v_fine_smooth) ** 0.5
-        ev_smooth, ev_eps2 = g.algorithms.eigen.evals(q.Mpc, [v_fine], real=True)
+        ev_smooth, ev_eps2 = g.algorithms.eigen.evals(Mpc, [v_fine], real=True)
         assert ev_eps2[0] < 1e-2
         ev3[i] = ev_smooth[0]
         g.message("Eigenvalue %d = %.15g" % (i, ev3[i]))
@@ -117,7 +175,7 @@ def save_history(fn, history):
 test_solver = params["test_solver"]
 solver = g.algorithms.inverter.sequence(
     g.algorithms.inverter.coarse_deflate(cevec, basis, ev3), test_solver
-)(q.Mpc)
+)(Mpc)
 v_fine[:] = 0
 solver(v_fine, start)
 save_history("cg_test.defl_all_ev3", test_solver.history)
@@ -125,13 +183,13 @@ save_history("cg_test.defl_all_ev3", test_solver.history)
 solver = g.algorithms.inverter.sequence(
     g.algorithms.inverter.coarse_deflate(cevec[0 : len(basis)], basis, ev3[0 : len(basis)]),
     params["test_solver"],
-)(q.Mpc)
+)(Mpc)
 v_fine[:] = 0
 solver(v_fine, start)
 save_history("cg_test.defl_full", test_solver.history)
 
 v_fine[:] = 0
-test_solver(q.Mpc)(v_fine, start)
+test_solver(Mpc)(v_fine, start)
 save_history("cg_test.undefl", test_solver.history)
 
 # save in rbc format
