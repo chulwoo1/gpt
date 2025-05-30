@@ -26,6 +26,17 @@ g.mem_report()
 
 # fermion
 #q = params["fmatrix"](U)
+
+exact = g.qcd.fermion.mobius(U,{
+    "mass": 0.01,
+    "M5": 1.8,
+    "b": 1.5,
+    "c": 0.5,
+    "Ls": 16,
+    "boundary_phases": [1.0, 1.0, 1.0, -1.0],
+})
+fmatrix = exact.converted(g.single)
+
 qz = g.qcd.fermion.zmobius( U,
     {
         "mass": 0.01,
@@ -48,7 +59,8 @@ qz = g.qcd.fermion.zmobius( U,
     },
 )
 
-fmatrix = qz.converted(g.single)
+#fmatrix = qz.converted(g.single)
+
 Mpc = g.qcd.fermion.preconditioner.eo2_ne(parity=g.odd)(fmatrix).Mpc
 
 

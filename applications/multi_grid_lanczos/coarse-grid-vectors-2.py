@@ -33,8 +33,8 @@ qz = g.qcd.fermion.zmobius( U,
     {
         "mass": 0.01,
         "M5": 1.8,
-        "b": 1.0,
-        "c": 0.0,
+        "b": 2.5,
+        "c": 1.5,
         "omega": [
             1.45806438985048 + 1j *(0),
             1.18231318389348 + 1j *(0),
@@ -45,12 +45,11 @@ qz = g.qcd.fermion.zmobius( U,
             0.126074299502912 + 1j *(0),
             0.0990136651962626 + 1j *(0),
             0.0686324988446592 + 1j *(0.0550658530827402),
-            0.0686324988446592 + 1j *(0.0550658530827402),
+            0.0686324988446592 + 1j *(-0.0550658530827402),
         ],
         "boundary_phases": [1.0, 1.0, 1.0, -1.0],
     },
 )
-
 fmatrix = qz.converted(g.single)
 Mpc = g.qcd.fermion.preconditioner.eo2_ne(parity=g.odd)(fmatrix).Mpc
 
@@ -159,6 +158,13 @@ except g.LoadError:
         g.message("Eigenvalue %d = %.15g" % (i, ev3[i]))
     g.save("ev3", ev3)
 
+# save in rbc format
+#g.save("lanczos.output", [basis, cevec, ev3], params["format"])
+g.save("lanczos.output", [basis, cevec, ev3], g.format.cevec({
+    "nsingle" : 10,
+    "max_read_blocks" : 16,
+}))
+
 # tests
 start = g.lattice(basis[0])
 start[:] = g.vspincolor([[1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1]])
@@ -191,6 +197,3 @@ save_history("cg_test.defl_full", test_solver.history)
 v_fine[:] = 0
 test_solver(Mpc)(v_fine, start)
 save_history("cg_test.undefl", test_solver.history)
-
-# save in rbc format
-g.save("lanczos.output", [basis, cevec, ev3], params["format"])
