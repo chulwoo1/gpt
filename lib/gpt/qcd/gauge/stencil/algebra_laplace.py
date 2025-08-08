@@ -196,7 +196,7 @@ class algebra_laplace_polynomial:
             lap(dst, src)
             src = g.copy(dst)
         g(dst[self.nd :], self.scale * g.expr(src[self.nd :]))
-        print('algebra_laplace_polynomial:', g.inner_product(tmp_, dst))
+#        print('algebra_laplace_polynomial:', g.inner_product(tmp_, dst))
 
     def inverse(self, solver):
         return self.lap[0].inverse(solver, self)
